@@ -1,15 +1,30 @@
 body {
     font-family: Arial, sans-serif;
     margin: 20px;
+    background: #202226;
+    color: #f2f4f7;
 }
 
 h1 {
-    color: #333;
+    color: #f7f8fa;
 }
 
 input {
     padding: 8px;
     width: 300px;
+    background: #2d3036;
+    color: #f7f8fa;
+    border: 1px solid #555b66;
+    border-radius: 4px;
+}
+
+input::placeholder {
+    color: #aeb5c1;
+}
+
+input:focus {
+    border-color: #75a7ff;
+    outline: 2px solid rgba(117, 167, 255, 0.25);
 }
 
 button {
@@ -28,13 +43,13 @@ button {
 
 .note {
     margin: 0 0 10px;
-    color: #555;
+    color: #c4c9d1;
     max-width: 640px;
 }
 
 .status-message {
     margin: 0 0 16px;
-    color: #666;
+    color: #c4c9d1;
     font-size: 0.95rem;
 }
 
@@ -50,19 +65,21 @@ li {
     gap: 10px;
     margin: 10px 0;
     padding: 14px 16px;
-    border: 1px solid #ddd;
+    border: 1px solid #3b4048;
     border-radius: 8px;
-    background: #fafafa;
+    background: #2a2d33;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 a {
     text-decoration: none;
-    color: #007bff;
+    color: #8db7ff;
     flex: 1;
 }
 
 a:hover {
     text-decoration: underline;
+    color: #b4ceff;
 }
 
 button {
@@ -74,6 +91,14 @@ button {
 
 button:hover {
     background-color: #d32f2f;
+}
+
+#aiBtn {
+    background-color: #2e9d5b;
+}
+
+#aiBtn:hover {
+    background-color: #238449;
 }
 
 button.refresh {
