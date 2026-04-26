@@ -9,6 +9,9 @@ let currentVideos = [];
 let lastQuery = '';
 let searchPageToken = '';
 let replacementQueue = [];
+let lastSearchSignature = '';
+let variationIndex = 0;
+const recentlyShownVideoIds = new Set();
 
 const qualitySearchTerms = [
     'thoughtful',
@@ -46,6 +49,15 @@ const tasteProfiles = [
     }
 ];
 
+const searchVariations = [
+    ['thoughtful', 'documentary', 'in depth'],
+    ['best', 'expert', 'guide'],
+    ['visual essay', 'conversation', 'insightful'],
+    ['quiet', 'slow', 'cinematic'],
+    ['masterclass', 'lecture', 'explained'],
+    ['underrated', 'high quality', 'long form']
+];
+
 const lowQualitySignals = [
     '#shorts',
     'shorts',
@@ -71,13 +83,28 @@ const cleanText = (text = '') => {
     return textarea.value.replace(/\s+/g, ' ').trim();
 };
 
-const buildTasteAwareQuery = (query) => {
+const getSearchSignature = (query) => query.trim().toLowerCase();
+
+const getNextVariationTerms = (query) => {
+    const signature = getSearchSignature(query);
+    if (signature !== lastSearchSignature) {
+        lastSearchSignature = signature;
+        variationIndex = 0;
+        recentlyShownVideoIds.clear();
+    }
+
+    const terms = searchVariations[variationIndex % searchVariations.length];
+    variationIndex += 1;
+    return terms;
+};
+
+const buildTasteAwareQuery = (query, variationTerms = []) => {
     const normalizedQuery = query.toLowerCase();
     const matchedProfile = tasteProfiles.find(profile =>
         profile.keywords.some(keyword => normalizedQuery.includes(keyword))
     );
     const profileTerms = matchedProfile ? matchedProfile.terms.slice(0, 3) : [];
-    const terms = [...new Set([...profileTerms, 'in depth', 'documentary'])];
+    const terms = [...new Set([...profileTerms, ...variationTerms])];
     return `${query} ${terms.join(' ')}`;
 };
 
@@ -137,6 +164,10 @@ const prepareVideoResults = (items, query) => {
         .sort((a, b) => scoreVideo(b, query) - scoreVideo(a, query));
 };
 
+const rememberShownVideos = (videos) => {
+    videos.forEach(video => recentlyShownVideoIds.add(video.id));
+};
+
 const renderList = (videos) => {
     videoList.innerHTML = '';
 
@@ -187,20 +218,38 @@ const requestYouTubeSearch = async (query, pageToken = '') => {
     return data;
 };
 
-const searchYouTube = async (query) => {
-    const tasteAwareData = await requestYouTubeSearch(buildTasteAwareQuery(query));
+const searchYouTube = async (query, options = {}) => {
+    const variationTerms = getNextVariationTerms(query);
+    const pageToken = options.useNextPage ? searchPageToken : '';
+    const tasteAwareData = await requestYouTubeSearch(buildTasteAwareQuery(query, variationTerms), pageToken);
     searchPageToken = tasteAwareData.nextPageToken || '';
-    const tasteAwareVideos = prepareVideoResults(tasteAwareData.items, query);
+    let tasteAwareVideos = prepareVideoResults(tasteAwareData.items, query)
+        .filter(video => !recentlyShownVideoIds.has(video.id));
+
+    if (tasteAwareVideos.length === 0) {
+        tasteAwareVideos = prepareVideoResults(tasteAwareData.items, query);
+    }
+
     if (tasteAwareVideos.length > 0) {
         replacementQueue = tasteAwareVideos.slice(10);
-        return tasteAwareVideos.slice(0, 10);
+        const videos = tasteAwareVideos.slice(0, 10);
+        rememberShownVideos(videos);
+        return videos;
     }
 
     const fallbackData = await requestYouTubeSearch(query);
     searchPageToken = fallbackData.nextPageToken || '';
-    const fallbackVideos = prepareVideoResults(fallbackData.items, query);
+    let fallbackVideos = prepareVideoResults(fallbackData.items, query)
+        .filter(video => !recentlyShownVideoIds.has(video.id));
+
+    if (fallbackVideos.length === 0) {
+        fallbackVideos = prepareVideoResults(fallbackData.items, query);
+    }
+
     replacementQueue = fallbackVideos.slice(10);
-    return fallbackVideos.slice(0, 10);
+    const videos = fallbackVideos.slice(0, 10);
+    rememberShownVideos(videos);
+    return videos;
 };
 
 const getReplacementVideo = async () => {
@@ -215,13 +264,14 @@ const getReplacementVideo = async () => {
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-        const data = await requestYouTubeSearch(buildTasteAwareQuery(lastQuery), searchPageToken);
+        const data = await requestYouTubeSearch(buildTasteAwareQuery(lastQuery, getNextVariationTerms(lastQuery)), searchPageToken);
         searchPageToken = data.nextPageToken || '';
         const candidates = prepareVideoResults(data.items, lastQuery)
-            .filter(video => !existingIds.has(video.id));
+            .filter(video => !existingIds.has(video.id) && !recentlyShownVideoIds.has(video.id));
 
         if (candidates.length > 0) {
             replacementQueue = candidates.slice(1);
+            rememberShownVideos([candidates[0]]);
             return candidates[0];
         }
     }
@@ -229,7 +279,7 @@ const getReplacementVideo = async () => {
     return null;
 };
 
-const loadSearchResults = async (query) => {
+const loadSearchResults = async (query, options = {}) => {
     if (!query) {
         showStatus('Please enter a search term.');
         return;
@@ -238,9 +288,11 @@ const loadSearchResults = async (query) => {
     showStatus('Searching YouTube...');
     try {
         lastQuery = query;
-        searchPageToken = '';
+        if (!options.useNextPage) {
+            searchPageToken = '';
+        }
         replacementQueue = [];
-        currentVideos = await searchYouTube(query);
+        currentVideos = await searchYouTube(query, options);
         renderList(currentVideos);
     } catch (error) {
         currentVideos = [];
@@ -267,6 +319,7 @@ const deleteVideo = async (video) => {
         }
 
         currentVideos.unshift(replacementVideo);
+        rememberShownVideos([replacementVideo]);
         renderList(currentVideos.slice(0, 10));
         currentVideos = currentVideos.slice(0, 10);
     } catch (error) {
@@ -281,7 +334,7 @@ const refreshVideos = () => {
         return;
     }
 
-    loadSearchResults(lastQuery);
+    loadSearchResults(lastQuery, { useNextPage: true });
 };
 
 // Event listeners
