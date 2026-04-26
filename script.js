@@ -58,6 +58,28 @@ const searchVariations = [
     ['underrated', 'high quality', 'long form']
 ];
 
+const currentEventSignals = [
+    'latest',
+    'news',
+    'today',
+    'recent',
+    'breaking',
+    'update',
+    'updates',
+    'this week',
+    'announced',
+    'announcement'
+];
+
+const currentEventVariations = [
+    ['latest news'],
+    ['breaking news'],
+    ['today'],
+    ['recent update'],
+    ['news update'],
+    ['announcement']
+];
+
 const lowQualitySignals = [
     '#shorts',
     'shorts',
@@ -85,6 +107,11 @@ const cleanText = (text = '') => {
 
 const getSearchSignature = (query) => query.trim().toLowerCase();
 
+const isCurrentEventQuery = (query) => {
+    const normalizedQuery = query.toLowerCase();
+    return currentEventSignals.some(signal => normalizedQuery.includes(signal));
+};
+
 const getNextVariationTerms = (query) => {
     const signature = getSearchSignature(query);
     if (signature !== lastSearchSignature) {
@@ -93,12 +120,17 @@ const getNextVariationTerms = (query) => {
         recentlyShownVideoIds.clear();
     }
 
-    const terms = searchVariations[variationIndex % searchVariations.length];
+    const variationSet = isCurrentEventQuery(query) ? currentEventVariations : searchVariations;
+    const terms = variationSet[variationIndex % variationSet.length];
     variationIndex += 1;
     return terms;
 };
 
 const buildTasteAwareQuery = (query, variationTerms = []) => {
+    if (isCurrentEventQuery(query)) {
+        return query;
+    }
+
     const normalizedQuery = query.toLowerCase();
     const matchedProfile = tasteProfiles.find(profile =>
         profile.keywords.some(keyword => normalizedQuery.includes(keyword))
@@ -111,9 +143,25 @@ const buildTasteAwareQuery = (query, variationTerms = []) => {
 const scoreVideo = (video, query) => {
     const haystack = `${video.title} ${video.description} ${video.channelTitle}`.toLowerCase();
     const normalizedQuery = query.toLowerCase();
+    const queryWords = normalizedQuery
+        .split(/\s+/)
+        .map(word => word.replace(/[^a-z0-9]/g, ''))
+        .filter(word => word.length > 2 && !['from', 'the', 'and', 'for', 'with'].includes(word));
     let score = 0;
 
     if (haystack.includes(normalizedQuery)) score += 6;
+    queryWords.forEach(word => {
+        if (haystack.includes(word)) score += 3;
+    });
+
+    if (isCurrentEventQuery(query)) {
+        currentEventSignals.forEach(signal => {
+            if (haystack.includes(signal)) score += 4;
+        });
+        if (haystack.includes('documentary') || haystack.includes('history')) score -= 6;
+        return score;
+    }
+
     qualitySearchTerms.forEach(term => {
         if (haystack.includes(term)) score += 2;
     });
@@ -148,6 +196,14 @@ const chooseQualityVideos = (items, query) => {
 };
 
 const prepareVideoResults = (items, query) => {
+    const requiredWords = isCurrentEventQuery(query)
+        ? query
+            .toLowerCase()
+            .split(/\s+/)
+            .map(word => word.replace(/[^a-z0-9]/g, ''))
+            .filter(word => word.length > 3 && !currentEventSignals.includes(word) && !['from', 'about', 'with'].includes(word))
+        : [];
+
     const seen = new Set();
     return items
         .map(item => ({
@@ -160,6 +216,11 @@ const prepareVideoResults = (items, query) => {
         .filter(video => {
             const haystack = `${video.title} ${video.description}`.toLowerCase();
             return !lowQualitySignals.some(signal => haystack.includes(signal));
+        })
+        .filter(video => {
+            if (requiredWords.length === 0) return true;
+            const haystack = `${video.title} ${video.description} ${video.channelTitle}`.toLowerCase();
+            return requiredWords.some(word => haystack.includes(word));
         })
         .sort((a, b) => scoreVideo(b, query) - scoreVideo(a, query));
 };
