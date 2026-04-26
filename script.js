@@ -2,146 +2,310 @@ const videoList = document.getElementById('videoList');
 const topicInput = document.getElementById('topicInput');
 const generateBtn = document.getElementById('generateBtn');
 const aiBtn = document.getElementById('aiBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+const statusMessage = document.getElementById('statusMessage');
 
-// Categories of videos based on user preferences
-const categories = {
-    presence: [
-        {id: 'hyvZ0XRAEcA', title: 'Eckhart Tolle: Presence and Awareness'},
-        {id: 'sY0APKgHZRQ', title: 'Mindfulness, Stillness, and Everyday Life'},
-        {id: '3qHkcs3YvK8', title: 'Naval Ravikant on Awareness and Happiness'},
-        {id: 'nM3rTU927io', title: 'Alan Watts on Reality and Presence'}
-    ],
-    nature: [
-        {id: 'PyFN_FYwqvc', title: 'Slow Forest Walk and Quiet Rain'},
-        {id: 'e04zAMupq7E', title: 'Misty Mountain Morning'},
-        {id: 'VNu15Qqomt8', title: 'Cinematic Misty Forest'},
-        {id: 'RzVvThhjAKw', title: 'Pacific Northwest Visual Stillness'}
-    ],
-    photography: [
-        {id: 'dcCFvBaPXY0', title: 'Analog Film Photography and Seeing'},
-        {id: 'yd6zl5MZcl8', title: 'Composition, Light, and Visual Perception'},
-        {id: 'f2WqMrAd598', title: 'Minimalist Photography: Finding the Frame'}
-    ],
-    thinking: [
-        {id: '3lPnN8omdPA', title: 'Deep Thinking on AI, Creativity, and Meaning'},
-        {id: 'UmzJIf3n9z4', title: 'Philosophy of Mind and Perception'},
-        {id: '3qHkcs3YvK8', title: 'Systems, Attention, and Clear Thinking'}
-    ],
-    craft: [
-        {id: '5vkd6SsYY70', title: 'Quiet Woodworking and Simple Craft'},
-        {id: 'b0hNVT_5H0c', title: 'Thoughtful Handcraft and Material Practice'},
-        {id: '7x5rf7YZsx8', title: 'Slow Building and Natural Materials'}
-    ],
-    music: [
-        {id: 'YW5m4loqqm0', title: 'Ambient Sounds for Quiet Focus'},
-        {id: 'DRFHklnN-SM', title: 'Minimalist Piano and Meditative Atmosphere'},
-        {id: 'hTWKbfoikeg', title: 'Slow Piano and Stillness'}
-    ]
-};
+const configuredYouTubeApiKey = typeof YOUTUBE_API_KEY !== 'undefined' ? YOUTUBE_API_KEY : 'YOUR_API_KEY_HERE';
+let currentVideos = [];
+let lastQuery = '';
+let searchPageToken = '';
+let replacementQueue = [];
 
-// Pool of all videos for random selection
-const videoPool = Object.values(categories).flat();
-
-// Predefined AI suggested videos (mix of categories)
-const aiVideos = [
-    ...categories.presence.slice(0, 2),
-    ...categories.nature.slice(0, 2),
-    ...categories.photography.slice(0, 1),
-    ...categories.thinking.slice(0, 2),
-    ...categories.craft.slice(0, 1),
-    ...categories.music.slice(0, 2)
+const qualitySearchTerms = [
+    'thoughtful',
+    'in depth',
+    'long form',
+    'documentary',
+    'lecture',
+    'high quality'
 ];
 
-let currentVideos = [...aiVideos];
+const tasteProfiles = [
+    {
+        keywords: ['nature', 'forest', 'ocean', 'mountain', 'rain', 'landscape', 'walk'],
+        terms: ['cinematic', 'quiet', '4k', 'no talking', 'slow']
+    },
+    {
+        keywords: ['meditation', 'mindfulness', 'presence', 'stillness', 'awareness'],
+        terms: ['guided', 'calm', 'eckhart tolle', 'talk', 'deep']
+    },
+    {
+        keywords: ['photography', 'photo', 'film', 'camera', 'composition', 'seeing'],
+        terms: ['composition', 'visual essay', 'masterclass', 'street photography']
+    },
+    {
+        keywords: ['thinking', 'philosophy', 'ai', 'creativity', 'mind', 'meaning'],
+        terms: ['conversation', 'lecture', 'deep dive', 'interview']
+    },
+    {
+        keywords: ['craft', 'wood', 'build', 'maker', 'material', 'design'],
+        terms: ['process', 'quiet', 'handmade', 'workshop']
+    },
+    {
+        keywords: ['music', 'ambient', 'piano', 'sound', 'focus'],
+        terms: ['full album', 'minimal', 'calm', 'focus']
+    }
+];
 
-// Function to render the list
-function renderList(videos) {
+const lowQualitySignals = [
+    '#shorts',
+    'shorts',
+    'tiktok',
+    'reaction',
+    'prank',
+    'gone wrong',
+    "you won't believe",
+    'shocking',
+    'insane',
+    'must watch',
+    'compilation'
+];
+
+const showStatus = (message, isError = false) => {
+    statusMessage.textContent = message;
+    statusMessage.style.color = isError ? '#d32f2f' : '#666';
+};
+
+const cleanText = (text = '') => {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value.replace(/\s+/g, ' ').trim();
+};
+
+const buildTasteAwareQuery = (query) => {
+    const normalizedQuery = query.toLowerCase();
+    const matchedProfile = tasteProfiles.find(profile =>
+        profile.keywords.some(keyword => normalizedQuery.includes(keyword))
+    );
+    const profileTerms = matchedProfile ? matchedProfile.terms.slice(0, 3) : [];
+    const terms = [...new Set([...profileTerms, 'in depth', 'documentary'])];
+    return `${query} ${terms.join(' ')}`;
+};
+
+const scoreVideo = (video, query) => {
+    const haystack = `${video.title} ${video.description} ${video.channelTitle}`.toLowerCase();
+    const normalizedQuery = query.toLowerCase();
+    let score = 0;
+
+    if (haystack.includes(normalizedQuery)) score += 6;
+    qualitySearchTerms.forEach(term => {
+        if (haystack.includes(term)) score += 2;
+    });
+    tasteProfiles.forEach(profile => {
+        profile.terms.forEach(term => {
+            if (haystack.includes(term)) score += 1;
+        });
+    });
+    lowQualitySignals.forEach(signal => {
+        if (haystack.includes(signal)) score -= 8;
+    });
+
+    return score;
+};
+
+const chooseQualityVideos = (items, query) => {
+    const seen = new Set();
+    return items
+        .map(item => ({
+            id: item.id.videoId,
+            title: cleanText(item.snippet.title),
+            description: cleanText(item.snippet.description),
+            channelTitle: cleanText(item.snippet.channelTitle)
+        }))
+        .filter(video => video.id && !seen.has(video.id) && seen.add(video.id))
+        .filter(video => {
+            const haystack = `${video.title} ${video.description}`.toLowerCase();
+            return !lowQualitySignals.some(signal => haystack.includes(signal));
+        })
+        .sort((a, b) => scoreVideo(b, query) - scoreVideo(a, query))
+        .slice(0, 10);
+};
+
+const prepareVideoResults = (items, query) => {
+    const seen = new Set();
+    return items
+        .map(item => ({
+            id: item.id.videoId,
+            title: cleanText(item.snippet.title),
+            description: cleanText(item.snippet.description),
+            channelTitle: cleanText(item.snippet.channelTitle)
+        }))
+        .filter(video => video.id && !seen.has(video.id) && seen.add(video.id))
+        .filter(video => {
+            const haystack = `${video.title} ${video.description}`.toLowerCase();
+            return !lowQualitySignals.some(signal => haystack.includes(signal));
+        })
+        .sort((a, b) => scoreVideo(b, query) - scoreVideo(a, query));
+};
+
+const renderList = (videos) => {
     videoList.innerHTML = '';
+
+    if (videos.length === 0) {
+        showStatus('No matching videos found for your search.');
+        return;
+    }
+
+    showStatus('');
     videos.forEach(video => {
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = `https://www.youtube.com/watch?v=${video.id}`;
-        a.target = '_blank';
+        a.onclick = (e) => {
+            e.preventDefault();
+            window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank');
+        };
         a.textContent = video.title;
-        const refreshBtn = document.createElement('button');
-        refreshBtn.className = 'refresh';
-        refreshBtn.textContent = 'Refresh';
-        refreshBtn.onclick = () => refreshVideo(video);
+
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = 'Delete';
         deleteBtn.onclick = () => deleteVideo(video);
+
         li.appendChild(a);
-        li.appendChild(refreshBtn);
         li.appendChild(deleteBtn);
         videoList.appendChild(li);
     });
-}
+};
 
-// Initial render
-renderList(currentVideos);
+const requestYouTubeSearch = async (query, pageToken = '') => {
+    const url = new URL('https://www.googleapis.com/youtube/v3/search');
+    url.searchParams.set('part', 'snippet');
+    url.searchParams.set('type', 'video');
+    url.searchParams.set('maxResults', '25');
+    url.searchParams.set('order', 'relevance');
+    url.searchParams.set('relevanceLanguage', 'en');
+    url.searchParams.set('safeSearch', 'moderate');
+    url.searchParams.set('videoDuration', 'any');
+    url.searchParams.set('q', query);
+    url.searchParams.set('key', configuredYouTubeApiKey);
+    if (pageToken) {
+        url.searchParams.set('pageToken', pageToken);
+    }
 
-// Generate button
-generateBtn.addEventListener('click', () => {
-    const topic = topicInput.value.trim().toLowerCase();
-    if (!topic) return;
-    // Determine category based on topic
-    let selectedCategory = videoPool; // default to all
-    if (topic.includes('nature') || topic.includes('forest') || topic.includes('ocean') || topic.includes('mountain')) {
-        selectedCategory = categories.nature;
-    } else if (topic.includes('meditation') || topic.includes('mindfulness') || topic.includes('presence') || topic.includes('stillness')) {
-        selectedCategory = categories.presence;
-    } else if (topic.includes('photography') || topic.includes('photo') || topic.includes('film') || topic.includes('seeing')) {
-        selectedCategory = categories.photography;
-    } else if (topic.includes('thinking') || topic.includes('philosophy') || topic.includes('ai') || topic.includes('creativity') || topic.includes('mind')) {
-        selectedCategory = categories.thinking;
-    } else if (topic.includes('craft') || topic.includes('wood') || topic.includes('build') || topic.includes('material')) {
-        selectedCategory = categories.craft;
-    } else if (topic.includes('music') || topic.includes('ambient') || topic.includes('sound')) {
-        selectedCategory = categories.music;
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`YouTube API request failed: ${response.status} ${response.statusText} ${body}`);
     }
-    // Generate 10 videos based on selected category
-    const generated = [];
-    for (let i = 0; i < 10; i++) {
-        const randomVideo = selectedCategory[Math.floor(Math.random() * selectedCategory.length)];
-        generated.push({
-            id: randomVideo.id,
-            title: `${topicInput.value} - ${randomVideo.title}`
-        });
+
+    const data = await response.json();
+    if (!data.items || !Array.isArray(data.items)) {
+        throw new Error('Unexpected YouTube API response.');
     }
-    currentVideos = generated;
+
+    return data;
+};
+
+const searchYouTube = async (query) => {
+    if (!configuredYouTubeApiKey || configuredYouTubeApiKey === 'YOUR_API_KEY_HERE') {
+        throw new Error('Missing YouTube API key. Please set YOUTUBE_API_KEY in config.js.');
+    }
+
+    const tasteAwareData = await requestYouTubeSearch(buildTasteAwareQuery(query));
+    searchPageToken = tasteAwareData.nextPageToken || '';
+    const tasteAwareVideos = prepareVideoResults(tasteAwareData.items, query);
+    if (tasteAwareVideos.length > 0) {
+        replacementQueue = tasteAwareVideos.slice(10);
+        return tasteAwareVideos.slice(0, 10);
+    }
+
+    const fallbackData = await requestYouTubeSearch(query);
+    searchPageToken = fallbackData.nextPageToken || '';
+    const fallbackVideos = prepareVideoResults(fallbackData.items, query);
+    replacementQueue = fallbackVideos.slice(10);
+    return fallbackVideos.slice(0, 10);
+};
+
+const getReplacementVideo = async () => {
+    if (!lastQuery) return null;
+
+    const existingIds = new Set(currentVideos.map(video => video.id));
+    while (replacementQueue.length > 0) {
+        const queuedVideo = replacementQueue.shift();
+        if (!existingIds.has(queuedVideo.id)) {
+            return queuedVideo;
+        }
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const data = await requestYouTubeSearch(buildTasteAwareQuery(lastQuery), searchPageToken);
+        searchPageToken = data.nextPageToken || '';
+        const candidates = prepareVideoResults(data.items, lastQuery)
+            .filter(video => !existingIds.has(video.id));
+
+        if (candidates.length > 0) {
+            replacementQueue = candidates.slice(1);
+            return candidates[0];
+        }
+    }
+
+    return null;
+};
+
+const loadSearchResults = async (query) => {
+    if (!query) {
+        showStatus('Please enter a search term.');
+        return;
+    }
+
+    showStatus('Searching YouTube...');
+    try {
+        lastQuery = query;
+        searchPageToken = '';
+        replacementQueue = [];
+        currentVideos = await searchYouTube(query);
+        renderList(currentVideos);
+    } catch (error) {
+        currentVideos = [];
+        videoList.innerHTML = '';
+        showStatus(error.message, true);
+    }
+};
+
+const deleteVideo = async (video) => {
+    const index = currentVideos.findIndex(v => v.id === video.id);
+    if (index === -1) return;
+    currentVideos.splice(index, 1);
     renderList(currentVideos);
+
+    if (currentVideos.length >= 10) return;
+
+    showStatus('Finding a replacement video...');
+    try {
+        const replacementVideo = await getReplacementVideo();
+        if (!replacementVideo) {
+            renderList(currentVideos);
+            showStatus('Deleted video. No replacement found yet.');
+            return;
+        }
+
+        currentVideos.unshift(replacementVideo);
+        renderList(currentVideos.slice(0, 10));
+        currentVideos = currentVideos.slice(0, 10);
+    } catch (error) {
+        renderList(currentVideos);
+        showStatus(`Deleted video, but replacement failed: ${error.message}`, true);
+    }
+};
+
+const refreshVideos = () => {
+    if (!lastQuery) {
+        showStatus('Search first before refreshing a video.', true);
+        return;
+    }
+
+    loadSearchResults(lastQuery);
+};
+
+// Event listeners
+generateBtn.addEventListener('click', () => loadSearchResults(topicInput.value.trim()));
+aiBtn.addEventListener('click', () => loadSearchResults('ambient nature meditation'));
+refreshBtn.addEventListener('click', refreshVideos);
+topicInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        loadSearchResults(topicInput.value.trim());
+    }
 });
 
-// AI button
-aiBtn.addEventListener('click', () => {
-    currentVideos = [...aiVideos];
-    renderList(currentVideos);
-});
-
-// Delete function
-function deleteVideo(video) {
-    const index = currentVideos.findIndex(v => v.id === video.id && v.title === video.title);
-    if (index > -1) {
-        currentVideos.splice(index, 1);
-        // Add a new random video
-        const randomVideo = videoPool[Math.floor(Math.random() * videoPool.length)];
-        currentVideos.push({
-            id: randomVideo.id,
-            title: `New: ${randomVideo.title}`
-        });
-        renderList(currentVideos);
-    }
-}
-
-// Refresh function
-function refreshVideo(video) {
-    const index = currentVideos.findIndex(v => v.id === video.id && v.title === video.title);
-    if (index > -1) {
-        const randomVideo = videoPool[Math.floor(Math.random() * videoPool.length)];
-        currentVideos[index] = {
-            id: randomVideo.id,
-            title: `Refreshed: ${randomVideo.title}`
-        };
-        renderList(currentVideos);
-    }
-}
+// Initial page state
+showStatus('Enter a topic and click Generate List to search YouTube.');

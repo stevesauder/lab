@@ -1,0 +1,11 @@
+{
+  "name": "youtube-video-app",
+  "version": "1.0.0",
+  "description": "A simple YouTube video list app",
+  "scripts": {
+    "start": "python3 -m http.server 8000"
+  },
+  "keywords": ["youtube", "videos", "web-app"],
+  "author": "",
+  "license": "MIT"
+}

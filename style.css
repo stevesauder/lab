@@ -32,6 +32,12 @@ button {
     max-width: 640px;
 }
 
+.status-message {
+    margin: 0 0 16px;
+    color: #666;
+    font-size: 0.95rem;
+}
+
 ul {
     list-style: none;
     padding: 0;

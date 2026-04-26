@@ -12,9 +12,12 @@
         <input type="text" id="topicInput" placeholder="What do you want to see?">
         <button id="generateBtn">Generate List</button>
         <button id="aiBtn">AI Suggest</button>
+        <button id="refreshBtn" class="refresh">Refresh</button>
     </div>
-    <p class="note">If a link is unavailable, click Refresh next to the video to replace it with a new recommendation.</p>
+    <p class="note">Use Refresh to generate a new set of recommendations for the current topic.</p>
+    <p id="statusMessage" class="status-message" aria-live="polite"></p>
     <ul id="videoList"></ul>
+    <script src="config.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
