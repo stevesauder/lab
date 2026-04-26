@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "A simple YouTube video list app",
   "scripts": {
-    "start": "python3 -m http.server 8000"
+    "dev": "netlify dev",
+    "start": "netlify dev"
   },
   "keywords": ["youtube", "videos", "web-app"],
   "author": "",

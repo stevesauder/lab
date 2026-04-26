@@ -5,7 +5,6 @@ const aiBtn = document.getElementById('aiBtn');
 const refreshBtn = document.getElementById('refreshBtn');
 const statusMessage = document.getElementById('statusMessage');
 
-const configuredYouTubeApiKey = typeof YOUTUBE_API_KEY !== 'undefined' ? YOUTUBE_API_KEY : 'YOUR_API_KEY_HERE';
 let currentVideos = [];
 let lastQuery = '';
 let searchPageToken = '';
@@ -168,24 +167,16 @@ const renderList = (videos) => {
 };
 
 const requestYouTubeSearch = async (query, pageToken = '') => {
-    const url = new URL('https://www.googleapis.com/youtube/v3/search');
-    url.searchParams.set('part', 'snippet');
-    url.searchParams.set('type', 'video');
-    url.searchParams.set('maxResults', '25');
-    url.searchParams.set('order', 'relevance');
-    url.searchParams.set('relevanceLanguage', 'en');
-    url.searchParams.set('safeSearch', 'moderate');
-    url.searchParams.set('videoDuration', 'any');
+    const url = new URL('/.netlify/functions/youtube-search', window.location.origin);
     url.searchParams.set('q', query);
-    url.searchParams.set('key', configuredYouTubeApiKey);
     if (pageToken) {
         url.searchParams.set('pageToken', pageToken);
     }
 
     const response = await fetch(url.toString());
     if (!response.ok) {
-        const body = await response.text();
-        throw new Error(`YouTube API request failed: ${response.status} ${response.statusText} ${body}`);
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `YouTube search failed: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -197,10 +188,6 @@ const requestYouTubeSearch = async (query, pageToken = '') => {
 };
 
 const searchYouTube = async (query) => {
-    if (!configuredYouTubeApiKey || configuredYouTubeApiKey === 'YOUR_API_KEY_HERE') {
-        throw new Error('Missing YouTube API key. Please set YOUTUBE_API_KEY in config.js.');
-    }
-
     const tasteAwareData = await requestYouTubeSearch(buildTasteAwareQuery(query));
     searchPageToken = tasteAwareData.nextPageToken || '';
     const tasteAwareVideos = prepareVideoResults(tasteAwareData.items, query);

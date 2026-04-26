@@ -4,11 +4,14 @@ A simple web app that generates lists of YouTube videos based on topics or AI su
 
 ## How to Run
 
-1. Make sure you have Python 3 installed.
-2. Run `npm start` to start the local server on port 8000.
-3. Open your browser and go to `http://localhost:8000`.
+For the YouTube search to work, run this app through Netlify so the private API key stays on the server side.
 
-Alternatively, you can run `python3 -m http.server 8000` directly.
+1. Install the Netlify CLI if needed: `npm install -g netlify-cli`
+2. Create a local `.env` file with `YOUTUBE_API_KEY=your_key_here`.
+3. Run `netlify dev`.
+4. Open the local URL that Netlify prints.
+
+Opening `index.html` directly, or using `python3 -m http.server`, will load the page but cannot run the Netlify Function that calls YouTube.
 
 ## Features
 
@@ -22,5 +25,7 @@ This app now fetches real YouTube search results.
 
 1. Go to https://console.cloud.google.com/apis/credentials
 2. Create an API key for the YouTube Data API v3.
-3. Open `config.js` and replace `YOUR_API_KEY_HERE` with your key.
-4. Run the app with `npm start` or `python3 -m http.server 8000`.
+3. In Netlify, set an environment variable named `YOUTUBE_API_KEY`.
+4. Deploy the site to Netlify.
+
+Do not put the API key in browser JavaScript. The frontend calls the Netlify Function at `/.netlify/functions/youtube-search`, and that function reads the key from the server environment.
